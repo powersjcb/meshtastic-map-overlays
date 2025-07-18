@@ -32,7 +32,7 @@ OVERLAYS = [
                 "rendering": {
                     "lineColor": "#90EE90", # Light green (less saturated)
                     "lineOpacity": 1.0,
-                    "lineThickness": 2.0,
+                    "lineThickness": 1.0,
                     "fillOpacity": 0.0
                 }
             },
@@ -44,7 +44,7 @@ OVERLAYS = [
                 "rendering": {
                     "lineColor": "#4169E1", # Royal blue (less saturated but still vibrant)
                     "lineOpacity": 1.0,
-                    "lineThickness": 2.0,
+                    "lineThickness": 1.0,
                     "fillOpacity": 1.0
                 }
             },
@@ -56,7 +56,7 @@ OVERLAYS = [
                 "rendering": {
                     "lineColor": "#32CD32", # Lime green (more saturated than roads)
                     "lineOpacity": 1.0,
-                    "lineThickness": 2.0,
+                    "lineThickness": 1.0,
                     "fillOpacity": 0.0
                 }
             }
