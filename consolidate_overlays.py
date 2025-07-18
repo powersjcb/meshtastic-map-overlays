@@ -10,7 +10,7 @@ Usage: python3 consolidate_overlays.py [output_directory]
 """
 
 import json
-import gzip
+import zlib
 import os
 import sys
 import math
@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
 # Configuration - Edit these values as needed
+# TODO: Add validation that the config is valid for all required fields (rendering properties, file paths)
 OVERLAYS = [
     {
         "name": "BurningMan",
@@ -26,10 +27,12 @@ OVERLAYS = [
                 "inputFile": "resources/burning_man/Street_Outlines.geojson",
                 "name": "Street Outlines",
                 "description": "Main street outlines and roads",
+                "simplificationStrategy": "douglas_peucker",
+                "simplificationTolerance": 0.000005,
                 "rendering": {
-                    "lineColor": "#00FF00",
-                    "lineOpacity": 0.8,
-                    "lineThickness": 0.5,
+                    "lineColor": "#90EE90", # Light green (less saturated)
+                    "lineOpacity": 1.0,
+                    "lineThickness": 2.0,
                     "fillOpacity": 0.0
                 }
             },
@@ -37,8 +40,9 @@ OVERLAYS = [
                 "inputFile": "resources/burning_man/Toilets.geojson",
                 "name": "Toilets",
                 "description": "Portable toilet locations",
+                "simplificationStrategy": "none",
                 "rendering": {
-                    "lineColor": "#0000FF",
+                    "lineColor": "#4169E1", # Royal blue (less saturated but still vibrant)
                     "lineOpacity": 1.0,
                     "lineThickness": 2.0,
                     "fillOpacity": 1.0
@@ -48,8 +52,9 @@ OVERLAYS = [
                 "inputFile": "resources/burning_man/Trash_Fence.geojson",
                 "name": "Trash Fence",
                 "description": "Event boundary and trash fence",
+                "simplificationStrategy": "none",
                 "rendering": {
-                    "lineColor": "#FF0000",
+                    "lineColor": "#32CD32", # Lime green (more saturated than roads)
                     "lineOpacity": 1.0,
                     "lineThickness": 2.0,
                     "fillOpacity": 0.0
@@ -106,8 +111,11 @@ def generate_svg_preview(config_file: str, output_file: str, width: int = 800, h
 
     # Load and decompress the configuration
     try:
-        with gzip.open(config_file, 'rt', encoding='utf-8') as f:
-            config = json.load(f)
+        with open(config_file, 'rb') as f:
+            compressed_data = f.read()
+
+        decompressed_data = zlib.decompress(compressed_data, wbits=-15)
+        config = json.loads(decompressed_data.decode('utf-8'))
     except Exception as e:
         print(f"Error loading configuration file: {e}")
         return
@@ -419,7 +427,7 @@ def consolidate_overlays(output_dir: str):
             print(f"  Processing {layer_id} from {filepath}")
 
             # Load and preprocess GeoJSON
-            geojson_data = load_and_preprocess_geojson(filepath)
+            geojson_data = load_and_preprocess_geojson(filepath, layer_config)
             if not geojson_data:
                 print(f"Error: Failed to load {filepath}")
                 exit(1)
@@ -452,10 +460,12 @@ def consolidate_overlays(output_dir: str):
         print(f"  Successfully created {uncompressed_file} ({original_size:,} bytes)")
 
         # Write compressed configuration
-        output_file = os.path.join(output_dir, f"{overlay_name}GeoJSONMapConfig.json.gz")
+        output_file = os.path.join(output_dir, f"{overlay_name}GeoJSONMapConfig.json.zlib")
 
-        with gzip.open(output_file, 'wt', encoding='utf-8') as f:
-            f.write(json_str)
+        # Use raw deflate format (wbits=-15) for better iOS compatibility
+        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
+        with open(output_file, 'wb') as f:
+            f.write(compressed_data)
 
         compressed_size = os.path.getsize(output_file)
         compression_ratio = (1 - compressed_size / original_size) * 100
@@ -471,7 +481,7 @@ def consolidate_overlays(output_dir: str):
 
     print(f"\nCompleted processing {total_files_processed} overlay configurations with {total_features_processed} total features")
 
-def load_and_preprocess_geojson(filepath: str) -> Optional[Dict[str, Any]]:
+def load_and_preprocess_geojson(filepath: str, layer_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Load and preprocess a GeoJSON file."""
     if not os.path.exists(filepath):
         print(f"Error: File not found: {filepath}")
@@ -492,14 +502,14 @@ def load_and_preprocess_geojson(filepath: str) -> Optional[Dict[str, Any]]:
             return None
 
         # Apply preprocessing
-        processed_data = preprocess_geojson(data)
+        processed_data = preprocess_geojson(data, layer_config)
         return processed_data
 
     except Exception as e:
         print(f"Error loading {filepath}: {e}")
         return None
 
-def preprocess_geojson(data: Dict[str, Any]) -> Dict[str, Any]:
+def preprocess_geojson(data: Dict[str, Any], layer_config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Preprocess GeoJSON data to reduce file size and normalize format.
 
@@ -507,8 +517,14 @@ def preprocess_geojson(data: Dict[str, Any]) -> Dict[str, Any]:
     - Truncate coordinates to 5 decimal places (~1m precision)
     - Remove unnecessary properties
     - Filter to only LineString and Polygon geometries
+    - Apply simplification based on layer configuration
     """
     processed_features = []
+
+    # Get simplification strategy and tolerance
+    strategy = layer_config.get("simplificationStrategy", "none")
+    tolerance = layer_config.get("simplificationTolerance", 0.0)
+    no_compression = layer_config.get("noCompression", False)
 
     for feature in data.get('features', []):
         geometry = feature.get('geometry', {})
@@ -518,17 +534,27 @@ def preprocess_geojson(data: Dict[str, Any]) -> Dict[str, Any]:
         if geometry_type not in ['LineString', 'Polygon', 'MultiLineString', 'MultiPolygon']:
             continue
 
-        # Truncate coordinates to 5 decimal places
-        truncated_geometry = truncate_coordinates(geometry)
+        # Apply simplification FIRST (before coordinate truncation)
+        if no_compression:
+            # Disable all simplification - keep original geometry
+            simplified_geometry = geometry
+        elif strategy == "rectangle" and geometry_type in ['Polygon', 'MultiPolygon']:
+            # Use rectangle simplification
+            simplified_geometry = simplify_to_rectangle(geometry)
+        elif strategy == "douglas_peucker" and tolerance > 0:
+            # Use Douglas-Peucker simplification
+            simplified_geometry = simplify_geometry(geometry, tolerance)
+        else:
+            # No simplification
+            simplified_geometry = geometry
 
-        # Keep minimal properties
-        properties = feature.get('properties', {})
-        cleaned_properties = {k: v for k, v in properties.items() if k in ['ref', 'name', 'type']}
+        # THEN truncate coordinates to 5 decimal places (final step)
+        truncated_geometry = truncate_coordinates(simplified_geometry)
 
         processed_feature = {
             'type': 'Feature',
             'geometry': truncated_geometry,
-            'properties': cleaned_properties if cleaned_properties else None
+            'properties': {}
         }
 
         # Include ID if present
@@ -542,8 +568,112 @@ def preprocess_geojson(data: Dict[str, Any]) -> Dict[str, Any]:
         'features': processed_features
     }
 
+def simplify_geometry(geometry: Dict[str, Any], tolerance: float) -> Dict[str, Any]:
+    """
+    Simplify geometry using Douglas-Peucker algorithm to reduce point count.
+
+    Args:
+        geometry: GeoJSON geometry object
+        tolerance: Simplification tolerance in degrees (default: 0.000001 ~ 0.11m)
+
+    Returns:
+        Simplified geometry object
+    """
+    geometry_type = geometry.get('type', '')
+    coordinates = geometry.get('coordinates', [])
+
+    if not coordinates:
+        return geometry
+
+    simplified_geometry = geometry.copy()
+
+    if geometry_type == 'LineString':
+        simplified_geometry['coordinates'] = douglas_peucker(coordinates, tolerance)
+    elif geometry_type == 'Polygon':
+        simplified_geometry['coordinates'] = [
+            douglas_peucker(ring, tolerance) for ring in coordinates
+        ]
+    elif geometry_type == 'MultiLineString':
+        simplified_geometry['coordinates'] = [
+            douglas_peucker(line, tolerance) for line in coordinates
+        ]
+    elif geometry_type == 'MultiPolygon':
+        simplified_geometry['coordinates'] = [
+            [douglas_peucker(ring, tolerance) for ring in polygon]
+            for polygon in coordinates
+        ]
+
+    return simplified_geometry
+
+def douglas_peucker(points: List[List[float]], tolerance: float) -> List[List[float]]:
+    """
+    Douglas-Peucker line simplification algorithm.
+
+    Args:
+        points: List of [lon, lat] coordinate pairs
+        tolerance: Maximum perpendicular distance for point removal
+
+    Returns:
+        Simplified list of coordinate pairs
+    """
+    if len(points) <= 2:
+        return points
+
+    # Find the point with maximum distance from line segment
+    max_distance = 0
+    max_index = 0
+
+    # Line segment from first to last point
+    start = points[0]
+    end = points[-1]
+
+    for i in range(1, len(points) - 1):
+        distance = perpendicular_distance(points[i], start, end)
+        if distance > max_distance:
+            max_distance = distance
+            max_index = i
+
+    # If max distance is greater than tolerance, recursively simplify
+    if max_distance > tolerance:
+        # Recursively simplify the two sub-lines
+        left = douglas_peucker(points[:max_index + 1], tolerance)
+        right = douglas_peucker(points[max_index:], tolerance)
+
+        # Combine results (avoid duplicate point at max_index)
+        return left[:-1] + right
+    else:
+        # All points between start and end can be removed
+        return [start, end]
+
+def perpendicular_distance(point: List[float], line_start: List[float], line_end: List[float]) -> float:
+    """
+    Calculate the perpendicular distance from a point to a line segment.
+
+    Args:
+        point: [lon, lat] coordinate
+        line_start: [lon, lat] start of line segment
+        line_end: [lon, lat] end of line segment
+
+    Returns:
+        Perpendicular distance in degrees
+    """
+    x, y = point[0], point[1]
+    x1, y1 = line_start[0], line_start[1]
+    x2, y2 = line_end[0], line_end[1]
+
+    # If line segment is a point, return distance to that point
+    if x1 == x2 and y1 == y2:
+        return math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
+
+    # Calculate perpendicular distance
+    # Formula: |(y2-y1)x - (x2-x1)y + x2*y1 - y2*x1| / sqrt((y2-y1)^2 + (x2-x1)^2)
+    numerator = abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1)
+    denominator = math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+
+    return numerator / denominator
+
 def truncate_coordinates(geometry: Dict[str, Any]) -> Dict[str, Any]:
-    """Truncate coordinates to 5 decimal places for ~1m precision."""
+    """Truncate coordinates to 5 decimal places for ~1m precision (good visual quality)."""
     def truncate_coord_array(coords):
         if isinstance(coords[0], (int, float)):
             # Single coordinate pair [lon, lat]
@@ -559,6 +689,402 @@ def truncate_coordinates(geometry: Dict[str, Any]) -> Dict[str, Any]:
         truncated_geometry['coordinates'] = truncate_coord_array(coordinates)
 
     return truncated_geometry
+
+def simplify_to_rectangle(geometry: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert any polygon to a simple 4-point axis-aligned rectangle.
+    For toilets, we want consistent orientation rather than optimal rotation.
+
+    Args:
+        geometry: GeoJSON geometry object (should be Polygon or MultiPolygon)
+
+    Returns:
+        Simplified geometry as a 4-point rectangle
+    """
+    geometry_type = geometry.get('type', '')
+    coordinates = geometry.get('coordinates', [])
+
+    if not coordinates:
+        return geometry
+
+    # Extract all coordinates from the geometry
+    all_coords = []
+
+    if geometry_type == 'Polygon':
+        # Extract all coordinates from all rings
+        for ring in coordinates:
+            all_coords.extend(ring)
+
+    elif geometry_type == 'MultiPolygon':
+        # Extract all coordinates from all polygons and rings
+        for polygon in coordinates:
+            for ring in polygon:
+                all_coords.extend(ring)
+
+    else:
+        # Not a polygon, return original
+        return geometry
+
+    if len(all_coords) < 3:
+        return geometry
+
+    # Use simple axis-aligned bounding box for consistent orientation
+    rectangle_coords = calculate_simple_bounding_box(all_coords)
+
+    return {
+        'type': 'Polygon',
+        'coordinates': [rectangle_coords]
+    }
+
+def calculate_centroid(coordinates: List[List[float]]) -> List[float]:
+    """
+    Calculate the centroid of a polygon or multipolygon.
+    This is a simplified approach and might not be accurate for all shapes.
+    """
+    if not coordinates:
+        return [0, 0]
+
+    # For a single polygon, sum all points and divide by count
+    if isinstance(coordinates[0], (int, float)):
+        # Handle single coordinate pair [lon, lat]
+        return [coordinates[0], coordinates[1]]
+    elif isinstance(coordinates[0], list):
+        # Handle array of coordinate pairs
+        cx = sum(p[0] for p in coordinates) / len(coordinates)
+        cy = sum(p[1] for p in coordinates) / len(coordinates)
+        return [cx, cy]
+    else:
+        return [0, 0] # Fallback
+
+def calculate_minimum_bounding_rectangle(coordinates: List[List[float]]) -> List[List[float]]:
+    """
+    Calculate the minimum bounding rectangle for a set of coordinates.
+    Simple approach: find the two farthest points, then find the perpendicular direction.
+
+    Args:
+        coordinates: List of [lon, lat] coordinate pairs
+
+    Returns:
+        List of 5 coordinate pairs forming a closed rectangle
+    """
+    if len(coordinates) < 3:
+        return coordinates
+
+    # Find the two points that are farthest apart
+    max_distance = 0
+    p1, p2 = None, None
+
+    for i in range(len(coordinates)):
+        for j in range(i + 1, len(coordinates)):
+            dist = distance(coordinates[i], coordinates[j])
+            if dist > max_distance:
+                max_distance = dist
+                p1, p2 = coordinates[i], coordinates[j]
+
+    if p1 is None or p2 is None:
+        return calculate_simple_bounding_box(coordinates)
+
+    # Calculate the direction vector of the line between p1 and p2
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    length = math.sqrt(dx * dx + dy * dy)
+
+    if length == 0:
+        return calculate_simple_bounding_box(coordinates)
+
+    # Normalize the direction vector
+    dx /= length
+    dy /= length
+
+    # Perpendicular direction (rotate 90 degrees)
+    perp_dx = -dy
+    perp_dy = dx
+
+    # Project all points onto both directions to find the extents
+    min_parallel = max_parallel = 0
+    min_perp = max_perp = 0
+
+    for point in coordinates:
+        # Project onto the main direction
+        proj_parallel = (point[0] - p1[0]) * dx + (point[1] - p1[1]) * dy
+        min_parallel = min(min_parallel, proj_parallel)
+        max_parallel = max(max_parallel, proj_parallel)
+
+        # Project onto the perpendicular direction
+        proj_perp = (point[0] - p1[0]) * perp_dx + (point[1] - p1[1]) * perp_dy
+        min_perp = min(min_perp, proj_perp)
+        max_perp = max(max_perp, proj_perp)
+
+    # Calculate the four corners of the rectangle
+    corners = []
+
+    # Bottom-left
+    x = p1[0] + min_parallel * dx + min_perp * perp_dx
+    y = p1[1] + min_parallel * dy + min_perp * perp_dy
+    corners.append([x, y])
+
+    # Bottom-right
+    x = p1[0] + max_parallel * dx + min_perp * perp_dx
+    y = p1[1] + max_parallel * dy + min_perp * perp_dy
+    corners.append([x, y])
+
+    # Top-right
+    x = p1[0] + max_parallel * dx + max_perp * perp_dx
+    y = p1[1] + max_parallel * dy + max_perp * perp_dy
+    corners.append([x, y])
+
+    # Top-left
+    x = p1[0] + min_parallel * dx + max_perp * perp_dx
+    y = p1[1] + min_parallel * dy + max_perp * perp_dy
+    corners.append([x, y])
+
+    # Close the polygon
+    corners.append(corners[0])
+
+    return corners
+
+def distance(p1: List[float], p2: List[float]) -> float:
+    """Calculate Euclidean distance between two points."""
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    return math.sqrt(dx * dx + dy * dy)
+
+def calculate_simple_bounding_box(coordinates: List[List[float]]) -> List[List[float]]:
+    """
+    Create a simple axis-aligned bounding box with proper GeoJSON polygon structure.
+    """
+    min_lon, min_lat = float('inf'), float('inf')
+    max_lon, max_lat = float('-inf'), float('-inf')
+
+    for coord in coordinates:
+        lon, lat = coord[0], coord[1]
+        min_lon = min(min_lon, lon)
+        max_lon = max(max_lon, lon)
+        min_lat = min(min_lat, lat)
+        max_lat = max(max_lat, lat)
+
+    # Create a simple 4-point rectangle with closing point for GeoJSON polygon
+    rectangle_coords = [
+        [min_lon, min_lat],  # Bottom-left
+        [max_lon, min_lat],  # Bottom-right
+        [max_lon, max_lat],  # Top-right
+        [min_lon, max_lat],  # Top-left
+        [min_lon, min_lat]   # Close the polygon (required for GeoJSON)
+    ]
+
+    return rectangle_coords
+
+def test_simplification_levels():
+    """Test different Douglas-Peucker tolerance values and their impact on final file size."""
+    print("Testing Douglas-Peucker simplification levels and final file sizes...")
+
+    # Test tolerance values (in degrees)
+    tolerances = [
+        0.0,        # No simplification
+        0.000001,   # ~0.11m - very conservative
+        0.00001,    # ~1.1m - conservative
+        0.0001,     # ~11m - moderate
+        0.001,      # ~111m - aggressive
+        0.01        # ~1.1km - very aggressive
+    ]
+
+    # Load a sample GeoJSON file for testing
+    test_file = "resources/burning_man/Street_Outlines.geojson"
+    if not os.path.exists(test_file):
+        print(f"Test file not found: {test_file}")
+        return
+
+    with open(test_file, 'r', encoding='utf-8') as f:
+        original_data = json.load(f)
+
+    print(f"\nOriginal file: {test_file}")
+    print(f"Original features: {len(original_data.get('features', []))}")
+
+    # Count original points
+    original_points = count_total_points(original_data)
+    print(f"Original total points: {original_points:,}")
+
+    print("\n" + "="*100)
+    print(f"{'Tolerance':<12} {'Distance':<10} {'Points':<10} {'Reduction':<12} {'Size (KB)':<12} {'Compressed':<12}")
+    print("="*100)
+
+    for tolerance in tolerances:
+        # Create a copy and apply simplification
+        test_data = json.loads(json.dumps(original_data))  # Deep copy
+
+        # Apply simplification to all features
+        for feature in test_data.get('features', []):
+            geometry = feature.get('geometry', {})
+            if geometry.get('coordinates'):
+                if tolerance > 0:
+                    simplified_geometry = simplify_geometry(geometry, tolerance)
+                    feature['geometry'] = simplified_geometry
+
+        # Count points after simplification
+        simplified_points = count_total_points(test_data)
+        point_reduction = ((original_points - simplified_points) / original_points) * 100
+
+        # Calculate uncompressed file size
+        json_str = json.dumps(test_data, separators=(',', ':'))
+        size_kb = len(json_str.encode('utf-8')) / 1024
+
+        # Calculate compressed file size
+        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
+        compressed_size_kb = len(compressed_data) / 1024
+
+        # Format tolerance description
+        if tolerance == 0.0:
+            tolerance_str = "None"
+            distance_str = "N/A"
+        else:
+            tolerance_str = f"{tolerance:.6f}"
+            distance_m = tolerance * 111000  # Rough conversion to meters
+            distance_str = f"{distance_m:.1f}m"
+
+        print(f"{tolerance_str:<12} {distance_str:<10} {simplified_points:<10,} {point_reduction:<11.1f}% {size_kb:<11.1f} {compressed_size_kb:<11.1f}")
+
+    print("="*100)
+    print("Note: Distance is approximate (1 degree ≈ 111km at equator)")
+    print("Compressed size uses zlib with level=6, wbits=-15 (raw deflate)")
+
+    # Test full overlay configuration with different tolerances
+    print("\n" + "="*100)
+    print("FULL OVERLAY CONFIGURATION TESTS")
+    print("="*100)
+
+    # Test different street simplification tolerances
+    street_tolerances = [0.00001, 0.0001, 0.001]
+
+    for street_tol in street_tolerances:
+        print(f"\nTesting with street tolerance: {street_tol:.6f}")
+
+        # Create test configuration
+        test_overlays = [
+            {
+                "name": "BurningMan",
+                "layers": {
+                    "streetOutlines": {
+                        "inputFile": "resources/burning_man/Street_Outlines.geojson",
+                        "name": "Street Outlines",
+                        "description": "Main street outlines and roads",
+                        "simplificationStrategy": "douglas_peucker",
+                        "simplificationTolerance": street_tol,
+                        "rendering": {
+                            "lineColor": "#90EE90",
+                            "lineOpacity": 1.0,
+                            "lineThickness": 2.0,
+                            "fillOpacity": 0.0
+                        }
+                    },
+                    "toilets": {
+                        "inputFile": "resources/burning_man/Toilets.geojson",
+                        "name": "Toilets",
+                        "description": "Portable toilet locations",
+                        "simplificationStrategy": "none",
+                        "rendering": {
+                            "lineColor": "#4169E1",
+                            "lineOpacity": 1.0,
+                            "lineThickness": 2.0,
+                            "fillOpacity": 1.0
+                        }
+                    },
+                    "trashFence": {
+                        "inputFile": "resources/burning_man/Trash_Fence.geojson",
+                        "name": "Trash Fence",
+                        "description": "Event boundary and trash fence",
+                        "simplificationStrategy": "douglas_peucker",
+                        "simplificationTolerance": 0.0001,
+                        "rendering": {
+                            "lineColor": "#32CD32",
+                            "lineOpacity": 1.0,
+                            "lineThickness": 2.0,
+                            "fillOpacity": 0.0
+                        }
+                    }
+                }
+            }
+        ]
+
+        # Process the test configuration
+        config = {
+            "version": "1.0",
+            "metadata": {
+                "name": "BurningMan Overlays",
+                "description": "Map overlays for BurningMan event",
+                "generated": datetime.now().isoformat()
+            },
+            "overlays": []
+        }
+
+        total_points = 0
+
+        for overlay_config in test_overlays:
+            for layer_id, layer_config in overlay_config["layers"].items():
+                filepath = layer_config["inputFile"]
+
+                # Load and preprocess GeoJSON
+                geojson_data = load_and_preprocess_geojson(filepath, layer_config)
+                if geojson_data:
+                    feature_count = len(geojson_data.get('features', []))
+                    layer_points = count_total_points(geojson_data)
+                    total_points += layer_points
+
+                    overlay = {
+                        "id": layer_id,
+                        "name": layer_config["name"],
+                        "description": layer_config["description"],
+                        "rendering": layer_config["rendering"],
+                        "geojson": geojson_data
+                    }
+                    config["overlays"].append(overlay)
+
+        # Calculate file sizes
+        json_str = json.dumps(config, separators=(',', ':'))
+        uncompressed_size = len(json_str.encode('utf-8'))
+        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
+        compressed_size = len(compressed_data)
+        compression_ratio = (1 - compressed_size / uncompressed_size) * 100
+
+        print(f"  Total points: {total_points:,}")
+        print(f"  Uncompressed: {uncompressed_size:,} bytes ({uncompressed_size/1024:.1f} KB)")
+        print(f"  Compressed: {compressed_size:,} bytes ({compressed_size/1024:.1f} KB)")
+        print(f"  Compression: {compression_ratio:.1f}%")
+
+    print("="*100)
+
+def count_total_points(geojson_data: Dict[str, Any]) -> int:
+    """Count total number of coordinate points in GeoJSON data."""
+    total_points = 0
+
+    for feature in geojson_data.get('features', []):
+        geometry = feature.get('geometry', {})
+        coordinates = geometry.get('coordinates', [])
+        geometry_type = geometry.get('type', '')
+
+        total_points += count_geometry_points(coordinates, geometry_type)
+
+    return total_points
+
+def count_geometry_points(coordinates: Any, geometry_type: str) -> int:
+    """Count points in a single geometry."""
+    if not coordinates:
+        return 0
+
+    if geometry_type == 'Point':
+        return 1
+    elif geometry_type == 'LineString':
+        return len(coordinates)
+    elif geometry_type == 'Polygon':
+        return sum(len(ring) for ring in coordinates)
+    elif geometry_type == 'MultiPoint':
+        return len(coordinates)
+    elif geometry_type == 'MultiLineString':
+        return sum(len(line) for line in coordinates)
+    elif geometry_type == 'MultiPolygon':
+        return sum(sum(len(ring) for ring in polygon) for polygon in coordinates)
+
+    return 0
+
 
 if __name__ == "__main__":
     # Get output directory from command line argument or use default
