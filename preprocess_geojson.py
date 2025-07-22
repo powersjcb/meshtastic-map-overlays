@@ -174,10 +174,10 @@ OVERLAYS = [
                 "description": "CPNS locations",
                 "simplificationStrategy": "none",
                 "rendering": {
-                    "lineColor": "#FF6347", # Tomato red
+                    "lineColor": "#0000FF", # light blue
                     "lineOpacity": 1.0,
-                    "lineThickness": 1.5,
-                    "fillOpacity": 0.0
+                    "lineThickness": 1.0,
+                    "fillOpacity": 1.0
                 }
             }
         }
@@ -405,7 +405,7 @@ def generate_geojson_svg_content(geojson_data: Dict[str, Any], bounds: Tuple[flo
   <defs>
     <style>
       .feature {{ stroke-width: 1; }}
-      .legend {{ font-family: Arial, sans-serif; font-size: 12px; }}
+      .legend {{ font-family: Arial, sans-serif; font-size: 10px; }}
     </style>
   </defs>
 
@@ -459,7 +459,7 @@ def generate_svg_content(config: Dict[str, Any], bounds: Tuple[float, float, flo
   <defs>
     <style>
       .overlay {{ stroke-width: 1; }}
-      .legend {{ font-family: Arial, sans-serif; font-size: 12px; }}
+      .legend {{ font-family: Arial, sans-serif; font-size: 10px; }}
     </style>
   </defs>
 
@@ -528,15 +528,15 @@ def generate_point_svg(coordinates: List[float], scale: float, offset_x: float, 
     """Generate SVG for a point with optional text label."""
     x, y = transform_coord(coordinates[0], coordinates[1], scale, offset_x, offset_y)
     svg = f'    <circle cx="{x}" cy="{y}" r="3"/>\n'
-    
+
     # Add text label if this is a CPN point
     if properties.get('layer_id') == 'cpns' and 'NAME' in properties:
         name = properties.get('NAME', '')
         # Escape special XML characters
         name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
         # Position text slightly above the point
-        svg += f'    <text x="{x}" y="{y-5}" text-anchor="middle" font-size="10" fill="black">{name}</text>\n'
-    
+        svg += f'    <text x="{x}" y="{y-5}" text-anchor="middle" font-size="8" fill="black">{name}</text>\n'
+
     return svg
 
 def generate_linestring_svg(coordinates: List[List[float]], scale: float, offset_x: float, offset_y: float) -> str:
@@ -569,7 +569,7 @@ def generate_multipoint_svg(coordinates: List[List[float]], scale: float, offset
     for coord in coordinates:
         x, y = transform_coord(coord[0], coord[1], scale, offset_x, offset_y)
         svg += f'    <circle cx="{x}" cy="{y}" r="3"/>\n'
-        
+
         # Add text label if this is a CPN point
         if properties.get('layer_id') == 'cpns' and 'NAME' in properties:
             name = properties.get('NAME', '')
