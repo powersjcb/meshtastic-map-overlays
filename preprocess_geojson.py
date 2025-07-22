@@ -150,7 +150,7 @@ OVERLAYS = [
                 "simplificationStrategy": "douglas_peucker",
                 "simplificationTolerance": 0.000005,
                 "rendering": {
-                    "lineColor": "#90EE90", # Light green (less saturated)
+                    "lineColor": "#333333", # dark grey
                     "lineOpacity": 1.0,
                     "lineThickness": 1.0,
                     "fillOpacity": 0.0
@@ -162,7 +162,7 @@ OVERLAYS = [
                 "description": "Event boundary and trash fence",
                 "simplificationStrategy": "none",
                 "rendering": {
-                    "lineColor": "#32CD32", # Lime green (more saturated than roads)
+                    "lineColor": "#FFA500", # orange plastic fence dust faded color
                     "lineOpacity": 1.0,
                     "lineThickness": 1.0,
                     "fillOpacity": 0.0
@@ -174,7 +174,7 @@ OVERLAYS = [
                 "description": "CPNS locations",
                 "simplificationStrategy": "none",
                 "rendering": {
-                    "lineColor": "#0000FF", # light blue
+                    "lineColor": "#FFA500", # dark salmon
                     "lineOpacity": 1.0,
                     "lineThickness": 1.0,
                     "fillOpacity": 1.0
