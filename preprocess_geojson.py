@@ -23,21 +23,21 @@ The output GeoJSON follows RFC 7946 with embedded styling properties in each fea
         "layer_id": "string",          // Internal layer identifier
         "layer_name": "string",        // Human-readable layer name
         "description": "string",       // Layer description
-        
+
         // Shared properties (all geometries)
         "visible": boolean,            // Whether to display (default: true)
-        
+
         // Point/MultiPoint styling
         "marker-color": "#rrggbb",     // Marker fill color
         "marker-size": "small|medium|large", // Marker size
         "marker-symbol": "string",     // Optional icon name or emoji
-        
+
         // Line/MultiLineString styling
         "stroke": "#rrggbb",          // Line color
         "stroke-width": number,       // Line width in pixels
         "stroke-opacity": number,     // Line transparency (0-1)
         "line-dasharray": [n,n,...],  // Optional dash pattern
-        
+
         // Polygon/MultiPolygon styling
         "fill": "#rrggbb",           // Fill color
         "fill-opacity": number,      // Fill transparency (0-1)
@@ -65,7 +65,7 @@ Point:
 
 LineString:
 {
-  "type": "Feature", 
+  "type": "Feature",
   "geometry": {"type": "LineString", "coordinates": [[-119.21612, 40.8029], [-119.21608, 40.80293]]},
   "properties": {
     "layer_id": "roads", "layer_name": "Roads",
@@ -80,7 +80,7 @@ Polygon:
   "geometry": {"type": "Polygon", "coordinates": [[[lon,lat], [lon,lat], [lon,lat], [lon,lat]]]},
   "properties": {
     "layer_id": "zones", "layer_name": "Event Zones",
-    "description": "Event boundary areas", 
+    "description": "Event boundary areas",
     "fill": "#FF0000", "fill-opacity": 0.3,
     "stroke": "#000000", "stroke-width": 1.0, "stroke-opacity": 0.8, "visible": true
   }
@@ -113,7 +113,7 @@ MultiPolygon:
   "type": "Feature",
   "geometry": {"type": "MultiPolygon", "coordinates": [[[[lon,lat], [lon,lat], [lon,lat], [lon,lat]]]]},
   "properties": {
-    "layer_id": "buildings", "layer_name": "Buildings", 
+    "layer_id": "buildings", "layer_name": "Buildings",
     "description": "Structure footprints",
     "fill": "#D2691E", "fill-opacity": 0.7,
     "stroke": "#000000", "stroke-width": 1.0, "stroke-opacity": 1.0, "visible": true
@@ -167,6 +167,18 @@ OVERLAYS = [
                     "lineThickness": 1.0,
                     "fillOpacity": 0.0
                 }
+            },
+            "cpns": {
+                "inputFile": "resources/burning_man/2025/cpns.geojson",
+                "name": "CPNS",
+                "description": "CPNS locations",
+                "simplificationStrategy": "none",
+                "rendering": {
+                    "lineColor": "#FF6347", # Tomato red
+                    "lineOpacity": 1.0,
+                    "lineThickness": 1.5,
+                    "fillOpacity": 0.0
+                }
             }
         }
     }
@@ -208,17 +220,17 @@ def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
 def convert_rendering_to_geojson_style(rendering_config: Dict[str, Any]) -> Dict[str, Any]:
     """Convert internal rendering configuration to GeoJSON style properties."""
     style_props = {}
-    
+
     # Map line/stroke properties
     if 'lineColor' in rendering_config:
         style_props['stroke'] = rendering_config['lineColor']
-    
+
     if 'lineOpacity' in rendering_config:
         style_props['stroke-opacity'] = rendering_config['lineOpacity']
-    
+
     if 'lineThickness' in rendering_config:
         style_props['stroke-width'] = rendering_config['lineThickness']
-    
+
     # Map fill properties
     if 'fillOpacity' in rendering_config:
         style_props['fill-opacity'] = rendering_config['fillOpacity']
@@ -227,11 +239,11 @@ def convert_rendering_to_geojson_style(rendering_config: Dict[str, Any]) -> Dict
             style_props['fill'] = rendering_config['lineColor']
         elif rendering_config['fillOpacity'] == 0:
             style_props['fill'] = '#000000'  # Default, but will be transparent
-    
+
     # For points, map to marker properties
     if 'lineColor' in rendering_config:
         style_props['marker-color'] = rendering_config['lineColor']
-    
+
     # Set marker size based on thickness or use default
     thickness = rendering_config.get('lineThickness', 1.0)
     if thickness <= 1.0:
@@ -240,37 +252,34 @@ def convert_rendering_to_geojson_style(rendering_config: Dict[str, Any]) -> Dict
         style_props['marker-size'] = 'medium'
     else:
         style_props['marker-size'] = 'large'
-    
+
     # Default to visible
     style_props['visible'] = True
-    
+
     return style_props
 
-def generate_svg_preview(config_file: str, output_file: str, width: int = 800, height: int = 600):
+def generate_svg_preview(geojson_file: str, output_file: str, width: int = 800, height: int = 600):
     """
-    Generate an SVG preview of the overlay configuration.
+    Generate an SVG preview of the GeoJSON data.
 
     Args:
-        config_file: Path to the compressed configuration file
+        geojson_file: Path to the GeoJSON file
         output_file: Path to output SVG file
         width: SVG width in pixels
         height: SVG height in pixels
     """
-    print(f"Generating SVG preview: {config_file} -> {output_file}")
+    print(f"Generating SVG preview: {geojson_file} -> {output_file}")
 
-    # Load and decompress the configuration
+    # Load the GeoJSON data
     try:
-        with open(config_file, 'rb') as f:
-            compressed_data = f.read()
-
-        decompressed_data = zlib.decompress(compressed_data, wbits=-15)
-        config = json.loads(decompressed_data.decode('utf-8'))
+        with open(geojson_file, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
     except Exception as e:
-        print(f"Error loading configuration file: {e}")
+        print(f"Error loading GeoJSON file: {e}")
         return
 
-    # Calculate bounds from all overlays
-    bounds = calculate_bounds(config)
+    # Calculate bounds from GeoJSON features
+    bounds = calculate_geojson_bounds(geojson_data)
     if not bounds:
         print("No valid geometry found for bounds calculation")
         return
@@ -279,7 +288,7 @@ def generate_svg_preview(config_file: str, output_file: str, width: int = 800, h
     scale, offset_x, offset_y = calculate_transform(bounds, width, height)
 
     # Generate SVG content
-    svg_content = generate_svg_content(config, bounds, scale, offset_x, offset_y, width, height)
+    svg_content = generate_geojson_svg_content(geojson_data, bounds, scale, offset_x, offset_y, width, height)
 
     # Write SVG file
     try:
@@ -288,6 +297,30 @@ def generate_svg_preview(config_file: str, output_file: str, width: int = 800, h
         print(f"Successfully created SVG preview: {output_file}")
     except Exception as e:
         print(f"Error writing SVG file: {e}")
+
+def calculate_geojson_bounds(geojson_data: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+    """Calculate the bounding box of GeoJSON features."""
+    min_lon, min_lat = float('inf'), float('inf')
+    max_lon, max_lat = float('-inf'), float('-inf')
+
+    for feature in geojson_data.get('features', []):
+        geometry = feature.get('geometry', {})
+        coordinates = geometry.get('coordinates', [])
+
+        # Extract coordinates based on geometry type
+        coords = extract_coordinates(coordinates, geometry.get('type', ''))
+
+        for coord in coords:
+            lon, lat = coord[0], coord[1]
+            min_lon = min(min_lon, lon)
+            max_lon = max(max_lon, lon)
+            min_lat = min(min_lat, lat)
+            max_lat = max(max_lat, lat)
+
+    if min_lon == float('inf'):
+        return None
+
+    return (min_lon, min_lat, max_lon, max_lat)
 
 def calculate_bounds(config: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
     """Calculate the bounding box of all overlays."""
@@ -361,6 +394,60 @@ def calculate_transform(bounds: Tuple[float, float, float, float], width: int, h
 
     return scale, offset_x, offset_y
 
+def generate_geojson_svg_content(geojson_data: Dict[str, Any], bounds: Tuple[float, float, float, float],
+                               scale: float, offset_x: float, offset_y: float, width: int, height: int) -> str:
+    """Generate the SVG content from GeoJSON data."""
+    min_lon, min_lat, max_lon, max_lat = bounds
+
+    # SVG header
+    svg = f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .feature {{ stroke-width: 1; }}
+      .legend {{ font-family: Arial, sans-serif; font-size: 12px; }}
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="{width}" height="{height}" fill="#f8f8f8" stroke="#ccc" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="{width//2}" y="20" text-anchor="middle" class="legend" font-weight="bold">
+    {geojson_data.get('metadata', {}).get('name', 'GeoJSON Preview')}
+  </text>
+
+  <!-- Features -->
+'''
+
+    # Add each feature
+    for feature in geojson_data.get('features', []):
+        properties = feature.get('properties', {})
+        geometry = feature.get('geometry', {})
+
+        # Get styling from properties
+        color = properties.get('stroke', properties.get('marker-color', '#000000'))
+        opacity = properties.get('stroke-opacity', 1.0)
+        thickness = properties.get('stroke-width', 1.0)
+        fill_opacity = properties.get('fill-opacity', 0.0)
+        fill_color = properties.get('fill', color)
+
+        # Convert hex to RGB for opacity
+        r, g, b = hex_to_rgb(color)
+        fill_r, fill_g, fill_b = hex_to_rgb(fill_color)
+
+        layer_name = properties.get('layer_name', 'Unknown')
+        svg += f'  <!-- {layer_name} -->\n'
+        svg += f'  <g class="feature" stroke="rgb({r},{g},{b})" stroke-opacity="{opacity}" stroke-width="{thickness}" fill="rgb({fill_r},{fill_g},{fill_b})" fill-opacity="{fill_opacity}">\n'
+
+        # Add geometry
+        svg += generate_geometry_svg(geometry, scale, offset_x, offset_y, properties)
+
+        svg += '  </g>\n'
+
+    svg += '</svg>'
+    return svg
+
 def generate_svg_content(config: Dict[str, Any], bounds: Tuple[float, float, float, float],
                         scale: float, offset_x: float, offset_y: float, width: int, height: int) -> str:
     """Generate the SVG content."""
@@ -409,35 +496,21 @@ def generate_svg_content(config: Dict[str, Any], bounds: Tuple[float, float, flo
 
         svg += '  </g>\n'
 
-    # Add legend
-    svg += generate_legend(config, width, height)
-
-    # Add bounds info
-    svg += f'''
-  <!-- Bounds Info -->
-  <text x="10" y="{height-30}" class="legend" fill="#666">
-    Bounds: {min_lon:.4f}, {min_lat:.4f} to {max_lon:.4f}, {max_lat:.4f}
-  </text>
-  <text x="10" y="{height-15}" class="legend" fill="#666">
-    Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-  </text>
-</svg>'''
-
     return svg
 
-def generate_geometry_svg(geometry: Dict[str, Any], scale: float, offset_x: float, offset_y: float) -> str:
+def generate_geometry_svg(geometry: Dict[str, Any], scale: float, offset_x: float, offset_y: float, properties: Dict[str, Any] = {}) -> str:
     """Generate SVG path for a geometry."""
     geometry_type = geometry.get('type', '')
     coordinates = geometry.get('coordinates', [])
 
     if geometry_type == 'Point':
-        return generate_point_svg(coordinates, scale, offset_x, offset_y)
+        return generate_point_svg(coordinates, scale, offset_x, offset_y, properties)
     elif geometry_type == 'LineString':
         return generate_linestring_svg(coordinates, scale, offset_x, offset_y)
     elif geometry_type == 'Polygon':
         return generate_polygon_svg(coordinates, scale, offset_x, offset_y)
     elif geometry_type == 'MultiPoint':
-        return generate_multipoint_svg(coordinates, scale, offset_x, offset_y)
+        return generate_multipoint_svg(coordinates, scale, offset_x, offset_y, properties)
     elif geometry_type == 'MultiLineString':
         return generate_multilinestring_svg(coordinates, scale, offset_x, offset_y)
     elif geometry_type == 'MultiPolygon':
@@ -451,10 +524,20 @@ def transform_coord(lon: float, lat: float, scale: float, offset_x: float, offse
     y = -lat * scale + offset_y  # Flip Y axis
     return x, y
 
-def generate_point_svg(coordinates: List[float], scale: float, offset_x: float, offset_y: float) -> str:
-    """Generate SVG for a point."""
+def generate_point_svg(coordinates: List[float], scale: float, offset_x: float, offset_y: float, properties: Dict[str, Any] = {}) -> str:
+    """Generate SVG for a point with optional text label."""
     x, y = transform_coord(coordinates[0], coordinates[1], scale, offset_x, offset_y)
-    return f'    <circle cx="{x}" cy="{y}" r="3"/>\n'
+    svg = f'    <circle cx="{x}" cy="{y}" r="3"/>\n'
+    
+    # Add text label if this is a CPN point
+    if properties.get('layer_id') == 'cpns' and 'NAME' in properties:
+        name = properties.get('NAME', '')
+        # Escape special XML characters
+        name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
+        # Position text slightly above the point
+        svg += f'    <text x="{x}" y="{y-5}" text-anchor="middle" font-size="10" fill="black">{name}</text>\n'
+    
+    return svg
 
 def generate_linestring_svg(coordinates: List[List[float]], scale: float, offset_x: float, offset_y: float) -> str:
     """Generate SVG for a line string."""
@@ -480,12 +563,20 @@ def generate_polygon_svg(coordinates: List[List[List[float]]], scale: float, off
 
     return svg
 
-def generate_multipoint_svg(coordinates: List[List[float]], scale: float, offset_x: float, offset_y: float) -> str:
+def generate_multipoint_svg(coordinates: List[List[float]], scale: float, offset_x: float, offset_y: float, properties: Dict[str, Any] = {}) -> str:
     """Generate SVG for multiple points."""
     svg = ''
     for coord in coordinates:
         x, y = transform_coord(coord[0], coord[1], scale, offset_x, offset_y)
         svg += f'    <circle cx="{x}" cy="{y}" r="3"/>\n'
+        
+        # Add text label if this is a CPN point
+        if properties.get('layer_id') == 'cpns' and 'NAME' in properties:
+            name = properties.get('NAME', '')
+            # Escape special XML characters
+            name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
+            # Position text slightly above the point
+            svg += f'    <text x="{x}" y="{y-5}" text-anchor="middle" font-size="10" fill="black">{name}</text>\n'
     return svg
 
 def generate_multilinestring_svg(coordinates: List[List[List[float]]], scale: float, offset_x: float, offset_y: float) -> str:
@@ -515,53 +606,23 @@ def generate_multipolygon_svg(coordinates: List[List[List[List[float]]]], scale:
             svg += f'    <path d="{path_data}"/>\n'
     return svg
 
-def generate_legend(config: Dict[str, Any], width: int, height: int) -> str:
-    """Generate a legend for the overlays."""
-    legend_x = width - 200
-    legend_y = 50
-    legend_width = 180
-    legend_height = 30 * len(config.get('overlays', [])) + 20
-
-    svg = f'''
-  <!-- Legend -->
-  <rect x="{legend_x}" y="{legend_y}" width="{legend_width}" height="{legend_height}"
-        fill="white" stroke="#ccc" stroke-width="1" opacity="0.9"/>
-  <text x="{legend_x + 10}" y="{legend_y + 15}" class="legend" font-weight="bold">Layers</text>
-'''
-
-    for i, overlay in enumerate(config.get('overlays', [])):
-        rendering = overlay.get('rendering', {})
-        color = rendering.get('lineColor', '#000000')
-        name = overlay.get('name', 'Unknown')
-
-        y_pos = legend_y + 35 + i * 25
-
-        # Color swatch
-        r, g, b = hex_to_rgb(color)
-        svg += f'  <rect x="{legend_x + 10}" y="{y_pos - 8}" width="12" height="12" fill="rgb({r},{g},{b})" stroke="#000" stroke-width="0.5"/>\n'
-
-        # Layer name
-        svg += f'  <text x="{legend_x + 30}" y="{y_pos}" class="legend">{name}</text>\n'
-
-    return svg
-
 def load_license_and_attribution():
     """Load license and attribution information from files."""
     license_text = ""
     attribution_text = ""
-    
+
     # Load LICENSE file
     license_path = "LICENSE"
     if os.path.exists(license_path):
         with open(license_path, 'r', encoding='utf-8') as f:
             license_text = f.read().strip()
-    
-    # Load ATTRIBUTION.md file  
+
+    # Load ATTRIBUTION.md file
     attribution_path = "ATTRIBUTION.md"
     if os.path.exists(attribution_path):
         with open(attribution_path, 'r', encoding='utf-8') as f:
             attribution_text = f.read().strip()
-    
+
     return license_text, attribution_text
 
 def consolidate_overlays(output_dir: str):
@@ -615,20 +676,20 @@ def consolidate_overlays(output_dir: str):
 
             # Add styling properties to each feature based on rendering config
             styling_properties = convert_rendering_to_geojson_style(layer_config["rendering"])
-            
+
             for feature in geojson_data.get('features', []):
                 # Ensure properties object exists
                 if 'properties' not in feature:
                     feature['properties'] = {}
-                
+
                 # Add layer metadata
                 feature['properties']['layer_id'] = layer_id
                 feature['properties']['layer_name'] = layer_config["name"]
                 feature['properties']['description'] = layer_config["description"]
-                
+
                 # Add styling properties
                 feature['properties'].update(styling_properties)
-                
+
                 # Add to consolidated collection
                 consolidated_geojson['features'].append(feature)
 
@@ -643,6 +704,10 @@ def consolidate_overlays(output_dir: str):
             f.write(json_str)
 
         print(f"  Successfully created {output_file} ({file_size:,} bytes)")
+
+        # generate svg preview
+        svg_output_file = os.path.join(output_dir, f"{overlay_name}.svg")
+        generate_svg_preview(output_file, svg_output_file)
 
         total_files_processed += 1
         total_features_processed += total_features
@@ -699,7 +764,7 @@ def preprocess_geojson(data: Dict[str, Any], layer_config: Dict[str, Any]) -> Di
         geometry_type = geometry.get('type', '')
 
         # Filter to only supported geometry types
-        if geometry_type not in ['LineString', 'Polygon', 'MultiLineString', 'MultiPolygon']:
+        if geometry_type not in ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon']:
             continue
 
         # Apply simplification FIRST (before coordinate truncation)
@@ -722,7 +787,7 @@ def preprocess_geojson(data: Dict[str, Any], layer_config: Dict[str, Any]) -> Di
         processed_feature = {
             'type': 'Feature',
             'geometry': truncated_geometry,
-            'properties': {}
+            'properties': feature.get('properties', {}).copy()  # Preserve original properties
         }
 
         # Include ID if present
@@ -1019,206 +1084,33 @@ def distance(p1: List[float], p2: List[float]) -> float:
 
 def calculate_simple_bounding_box(coordinates: List[List[float]]) -> List[List[float]]:
     """
-    Create a simple axis-aligned bounding box with proper GeoJSON polygon structure.
+    Calculate a simple axis-aligned bounding box for a set of coordinates.
+
+    Args:
+        coordinates: List of [lon, lat] coordinate pairs
+
+    Returns:
+        List of 5 coordinate pairs forming a closed rectangle
     """
-    min_lon, min_lat = float('inf'), float('inf')
-    max_lon, max_lat = float('-inf'), float('-inf')
+    if len(coordinates) < 3:
+        return coordinates
 
-    for coord in coordinates:
-        lon, lat = coord[0], coord[1]
-        min_lon = min(min_lon, lon)
-        max_lon = max(max_lon, lon)
-        min_lat = min(min_lat, lat)
-        max_lat = max(max_lat, lat)
+    # Find min/max coordinates
+    min_lon = min(coord[0] for coord in coordinates)
+    max_lon = max(coord[0] for coord in coordinates)
+    min_lat = min(coord[1] for coord in coordinates)
+    max_lat = max(coord[1] for coord in coordinates)
 
-    # Create a simple 4-point rectangle with closing point for GeoJSON polygon
-    rectangle_coords = [
+    # Create rectangle corners (counterclockwise)
+    rectangle = [
         [min_lon, min_lat],  # Bottom-left
         [max_lon, min_lat],  # Bottom-right
         [max_lon, max_lat],  # Top-right
         [min_lon, max_lat],  # Top-left
-        [min_lon, min_lat]   # Close the polygon (required for GeoJSON)
+        [min_lon, min_lat]   # Close the polygon
     ]
 
-    return rectangle_coords
-
-def test_simplification_levels():
-    """Test different Douglas-Peucker tolerance values and their impact on final file size."""
-    print("Testing Douglas-Peucker simplification levels and final file sizes...")
-
-    # Test tolerance values (in degrees)
-    tolerances = [
-        0.0,        # No simplification
-        0.000001,   # ~0.11m - very conservative
-        0.00001,    # ~1.1m - conservative
-        0.0001,     # ~11m - moderate
-        0.001,      # ~111m - aggressive
-        0.01        # ~1.1km - very aggressive
-    ]
-
-    # Load a sample GeoJSON file for testing
-    test_file = "resources/burning_man/Street_Outlines.geojson"
-    if not os.path.exists(test_file):
-        print(f"Test file not found: {test_file}")
-        return
-
-    with open(test_file, 'r', encoding='utf-8') as f:
-        original_data = json.load(f)
-
-    print(f"\nOriginal file: {test_file}")
-    print(f"Original features: {len(original_data.get('features', []))}")
-
-    # Count original points
-    original_points = count_total_points(original_data)
-    print(f"Original total points: {original_points:,}")
-
-    print("\n" + "="*100)
-    print(f"{'Tolerance':<12} {'Distance':<10} {'Points':<10} {'Reduction':<12} {'Size (KB)':<12} {'Compressed':<12}")
-    print("="*100)
-
-    for tolerance in tolerances:
-        # Create a copy and apply simplification
-        test_data = json.loads(json.dumps(original_data))  # Deep copy
-
-        # Apply simplification to all features
-        for feature in test_data.get('features', []):
-            geometry = feature.get('geometry', {})
-            if geometry.get('coordinates'):
-                if tolerance > 0:
-                    simplified_geometry = simplify_geometry(geometry, tolerance)
-                    feature['geometry'] = simplified_geometry
-
-        # Count points after simplification
-        simplified_points = count_total_points(test_data)
-        point_reduction = ((original_points - simplified_points) / original_points) * 100
-
-        # Calculate uncompressed file size
-        json_str = json.dumps(test_data, separators=(',', ':'))
-        size_kb = len(json_str.encode('utf-8')) / 1024
-
-        # Calculate compressed file size
-        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
-        compressed_size_kb = len(compressed_data) / 1024
-
-        # Format tolerance description
-        if tolerance == 0.0:
-            tolerance_str = "None"
-            distance_str = "N/A"
-        else:
-            tolerance_str = f"{tolerance:.6f}"
-            distance_m = tolerance * 111000  # Rough conversion to meters
-            distance_str = f"{distance_m:.1f}m"
-
-        print(f"{tolerance_str:<12} {distance_str:<10} {simplified_points:<10,} {point_reduction:<11.1f}% {size_kb:<11.1f} {compressed_size_kb:<11.1f}")
-
-    print("="*100)
-    print("Note: Distance is approximate (1 degree ≈ 111km at equator)")
-    print("Compressed size uses zlib with level=6, wbits=-15 (raw deflate)")
-
-    # Test full overlay configuration with different tolerances
-    print("\n" + "="*100)
-    print("FULL OVERLAY CONFIGURATION TESTS")
-    print("="*100)
-
-    # Test different street simplification tolerances
-    street_tolerances = [0.00001, 0.0001, 0.001]
-
-    for street_tol in street_tolerances:
-        print(f"\nTesting with street tolerance: {street_tol:.6f}")
-
-        # Create test configuration
-        test_overlays = [
-            {
-                "name": "BurningMan",
-                "layers": {
-                    "streetOutlines": {
-                        "inputFile": "resources/burning_man/Street_Outlines.geojson",
-                        "name": "Street Outlines",
-                        "description": "Main street outlines and roads",
-                        "simplificationStrategy": "douglas_peucker",
-                        "simplificationTolerance": street_tol,
-                        "rendering": {
-                            "lineColor": "#90EE90",
-                            "lineOpacity": 1.0,
-                            "lineThickness": 2.0,
-                            "fillOpacity": 0.0
-                        }
-                    },
-                    "toilets": {
-                        "inputFile": "resources/burning_man/Toilets.geojson",
-                        "name": "Toilets",
-                        "description": "Portable toilet locations",
-                        "simplificationStrategy": "none",
-                        "rendering": {
-                            "lineColor": "#4169E1",
-                            "lineOpacity": 1.0,
-                            "lineThickness": 2.0,
-                            "fillOpacity": 1.0
-                        }
-                    },
-                    "trashFence": {
-                        "inputFile": "resources/burning_man/Trash_Fence.geojson",
-                        "name": "Trash Fence",
-                        "description": "Event boundary and trash fence",
-                        "simplificationStrategy": "douglas_peucker",
-                        "simplificationTolerance": 0.0001,
-                        "rendering": {
-                            "lineColor": "#32CD32",
-                            "lineOpacity": 1.0,
-                            "lineThickness": 2.0,
-                            "fillOpacity": 0.0
-                        }
-                    }
-                }
-            }
-        ]
-
-        # Process the test configuration
-        config = {
-            "version": "1.0",
-            "metadata": {
-                "name": "BurningMan Overlays",
-                "description": "Map overlays for BurningMan event",
-                "generated": datetime.now().isoformat()
-            },
-            "overlays": []
-        }
-
-        total_points = 0
-
-        for overlay_config in test_overlays:
-            for layer_id, layer_config in overlay_config["layers"].items():
-                filepath = layer_config["inputFile"]
-
-                # Load and preprocess GeoJSON
-                geojson_data = load_and_preprocess_geojson(filepath, layer_config)
-                if geojson_data:
-                    feature_count = len(geojson_data.get('features', []))
-                    layer_points = count_total_points(geojson_data)
-                    total_points += layer_points
-
-                    overlay = {
-                        "id": layer_id,
-                        "name": layer_config["name"],
-                        "description": layer_config["description"],
-                        "rendering": layer_config["rendering"],
-                        "geojson": geojson_data
-                    }
-                    config["overlays"].append(overlay)
-
-        # Calculate file sizes
-        json_str = json.dumps(config, separators=(',', ':'))
-        uncompressed_size = len(json_str.encode('utf-8'))
-        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
-        compressed_size = len(compressed_data)
-        compression_ratio = (1 - compressed_size / uncompressed_size) * 100
-
-        print(f"  Total points: {total_points:,}")
-        print(f"  Uncompressed: {uncompressed_size:,} bytes ({uncompressed_size/1024:.1f} KB)")
-        print(f"  Compressed: {compressed_size:,} bytes ({compressed_size/1024:.1f} KB)")
-        print(f"  Compression: {compression_ratio:.1f}%")
-
-    print("="*100)
+    return rectangle
 
 def count_total_points(geojson_data: Dict[str, Any]) -> int:
     """Count total number of coordinate points in GeoJSON data."""
@@ -1254,12 +1146,11 @@ def count_geometry_points(coordinates: Any, geometry_type: str) -> int:
     return 0
 
 
+output_dir = "./output"
+
+
 if __name__ == "__main__":
     # Get output directory from command line argument or use default
-    if len(sys.argv) > 1:
-        output_dir = sys.argv[1]
-    else:
-        output_dir = "./output"
 
     print(f"Output directory: {output_dir}")
 
