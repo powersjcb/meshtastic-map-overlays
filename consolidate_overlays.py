@@ -144,7 +144,7 @@ OVERLAYS = [
         "name": "BurningMan",
         "layers": {
             "streetOutlines": {
-                "inputFile": "resources/burning_man/Street_Outlines.geojson",
+                "inputFile": "resources/burning_man/2025/street_outlines.geojson",
                 "name": "Street Outlines",
                 "description": "Main street outlines and roads",
                 "simplificationStrategy": "douglas_peucker",
@@ -156,20 +156,8 @@ OVERLAYS = [
                     "fillOpacity": 0.0
                 }
             },
-            "toilets": {
-                "inputFile": "resources/burning_man/Toilets.geojson",
-                "name": "Toilets",
-                "description": "Portable toilet locations",
-                "simplificationStrategy": "none",
-                "rendering": {
-                    "lineColor": "#4169E1", # Royal blue (less saturated but still vibrant)
-                    "lineOpacity": 1.0,
-                    "lineThickness": 1.0,
-                    "fillOpacity": 1.0
-                }
-            },
             "trashFence": {
-                "inputFile": "resources/burning_man/Trash_Fence.geojson",
+                "inputFile": "resources/burning_man/2025/trash_fence.geojson",
                 "name": "Trash Fence",
                 "description": "Event boundary and trash fence",
                 "simplificationStrategy": "none",
