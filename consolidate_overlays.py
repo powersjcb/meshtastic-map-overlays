@@ -545,10 +545,32 @@ def generate_legend(config: Dict[str, Any], width: int, height: int) -> str:
 
     return svg
 
+def load_license_and_attribution():
+    """Load license and attribution information from files."""
+    license_text = ""
+    attribution_text = ""
+    
+    # Load LICENSE file
+    license_path = "LICENSE"
+    if os.path.exists(license_path):
+        with open(license_path, 'r', encoding='utf-8') as f:
+            license_text = f.read().strip()
+    
+    # Load ATTRIBUTION.md file  
+    attribution_path = "ATTRIBUTION.md"
+    if os.path.exists(attribution_path):
+        with open(attribution_path, 'r', encoding='utf-8') as f:
+            attribution_text = f.read().strip()
+    
+    return license_text, attribution_text
+
 def consolidate_overlays(output_dir: str):
     """Consolidate multiple GeoJSON files into a single GeoJSON file with embedded styling."""
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
+
+    # Load license and attribution information
+    license_text, attribution_text = load_license_and_attribution()
 
     total_files_processed = 0
     total_features_processed = 0
@@ -559,9 +581,19 @@ def consolidate_overlays(output_dir: str):
 
         print(f"\nProcessing overlay: {overlay_name}")
 
-        # Create a single GeoJSON FeatureCollection
+        # Create a single GeoJSON FeatureCollection with metadata
         consolidated_geojson = {
             "type": "FeatureCollection",
+            "metadata": {
+                "name": f"{overlay_name} GeoJSON Map Data",
+                "description": "Consolidated GeoJSON data with embedded styling",
+                "generated": datetime.now().isoformat(),
+                "license": license_text,
+                "attribution": attribution_text,
+                "disclaimer": "This project is not affiliated, endorsed, or verified by Burning Man Project",
+                "source": "https://github.com/burningmantech/innovate-GIS-data",
+                "usage_terms": "Non-commercial use only. See license for full terms."
+            },
             "features": []
         }
 
