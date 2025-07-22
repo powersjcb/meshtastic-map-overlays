@@ -1,10 +1,130 @@
 #!/usr/bin/env python3
 """
-Consolidate multiple GeoJSON files into compressed configuration files.
+Consolidate multiple GeoJSON files into a single GeoJSON FeatureCollection with embedded styling.
 
-This script takes individual GeoJSON files and combines them into multiple
-JSON configuration files with embedded GeoJSON data and rendering properties,
-then compresses them with gzip for efficient storage in the iOS app bundle.
+This script processes individual GeoJSON files and combines them into a single standard
+GeoJSON FeatureCollection where each feature has styling properties embedded in its
+'properties' object, conforming to the GeoJSON styling specification.
+
+OUTPUT SCHEMA:
+The output GeoJSON follows RFC 7946 with embedded styling properties in each feature:
+
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point|LineString|Polygon|MultiPoint|MultiLineString|MultiPolygon",
+        "coordinates": [...]
+      },
+      "properties": {
+        // Layer metadata
+        "layer_id": "string",          // Internal layer identifier
+        "layer_name": "string",        // Human-readable layer name
+        "description": "string",       // Layer description
+        
+        // Shared properties (all geometries)
+        "visible": boolean,            // Whether to display (default: true)
+        
+        // Point/MultiPoint styling
+        "marker-color": "#rrggbb",     // Marker fill color
+        "marker-size": "small|medium|large", // Marker size
+        "marker-symbol": "string",     // Optional icon name or emoji
+        
+        // Line/MultiLineString styling
+        "stroke": "#rrggbb",          // Line color
+        "stroke-width": number,       // Line width in pixels
+        "stroke-opacity": number,     // Line transparency (0-1)
+        "line-dasharray": [n,n,...],  // Optional dash pattern
+        
+        // Polygon/MultiPolygon styling
+        "fill": "#rrggbb",           // Fill color
+        "fill-opacity": number,      // Fill transparency (0-1)
+        "stroke": "#rrggbb",         // Border color
+        "stroke-width": number,      // Border width in pixels
+        "stroke-opacity": number,    // Border transparency (0-1)
+        "line-dasharray": [n,n,...]  // Optional border dash pattern
+      }
+    }
+  ]
+}
+
+SUPPORTED GEOMETRY EXAMPLES:
+
+Point:
+{
+  "type": "Feature",
+  "geometry": {"type": "Point", "coordinates": [-119.21612, 40.8029]},
+  "properties": {
+    "layer_id": "toilets", "layer_name": "Toilets",
+    "description": "Portable toilet locations",
+    "marker-color": "#4169E1", "marker-size": "medium", "visible": true
+  }
+}
+
+LineString:
+{
+  "type": "Feature", 
+  "geometry": {"type": "LineString", "coordinates": [[-119.21612, 40.8029], [-119.21608, 40.80293]]},
+  "properties": {
+    "layer_id": "roads", "layer_name": "Roads",
+    "description": "Street network",
+    "stroke": "#90EE90", "stroke-width": 2.0, "stroke-opacity": 1.0, "visible": true
+  }
+}
+
+Polygon:
+{
+  "type": "Feature",
+  "geometry": {"type": "Polygon", "coordinates": [[[lon,lat], [lon,lat], [lon,lat], [lon,lat]]]},
+  "properties": {
+    "layer_id": "zones", "layer_name": "Event Zones",
+    "description": "Event boundary areas", 
+    "fill": "#FF0000", "fill-opacity": 0.3,
+    "stroke": "#000000", "stroke-width": 1.0, "stroke-opacity": 0.8, "visible": true
+  }
+}
+
+MultiPoint:
+{
+  "type": "Feature",
+  "geometry": {"type": "MultiPoint", "coordinates": [[-119.21612, 40.8029], [-119.21608, 40.80293]]},
+  "properties": {
+    "layer_id": "services", "layer_name": "Services",
+    "description": "Service locations",
+    "marker-color": "#32CD32", "marker-size": "small", "visible": true
+  }
+}
+
+MultiLineString:
+{
+  "type": "Feature",
+  "geometry": {"type": "MultiLineString", "coordinates": [[[lon,lat], [lon,lat]], [[lon,lat], [lon,lat]]]},
+  "properties": {
+    "layer_id": "trails", "layer_name": "Trails",
+    "description": "Walking paths",
+    "stroke": "#8B4513", "stroke-width": 1.5, "stroke-opacity": 0.8, "visible": true
+  }
+}
+
+MultiPolygon:
+{
+  "type": "Feature",
+  "geometry": {"type": "MultiPolygon", "coordinates": [[[[lon,lat], [lon,lat], [lon,lat], [lon,lat]]]]},
+  "properties": {
+    "layer_id": "buildings", "layer_name": "Buildings", 
+    "description": "Structure footprints",
+    "fill": "#D2691E", "fill-opacity": 0.7,
+    "stroke": "#000000", "stroke-width": 1.0, "stroke-opacity": 1.0, "visible": true
+  }
+}
+
+REFERENCES:
+- RFC 7946 - GeoJSON standard: https://datatracker.ietf.org/doc/html/rfc7946
+- Mapbox SimpleStyle Spec: https://github.com/mapbox/simplestyle-spec
+- Leaflet Style Functions: https://leafletjs.com/examples/geojson/
+- Mapbox GL Style Specification: https://docs.mapbox.com/mapbox-gl-js/style-spec/
 
 Usage: python3 consolidate_overlays.py [output_directory]
 """
@@ -96,6 +216,47 @@ def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     """Convert hex color to RGB tuple."""
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def convert_rendering_to_geojson_style(rendering_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert internal rendering configuration to GeoJSON style properties."""
+    style_props = {}
+    
+    # Map line/stroke properties
+    if 'lineColor' in rendering_config:
+        style_props['stroke'] = rendering_config['lineColor']
+    
+    if 'lineOpacity' in rendering_config:
+        style_props['stroke-opacity'] = rendering_config['lineOpacity']
+    
+    if 'lineThickness' in rendering_config:
+        style_props['stroke-width'] = rendering_config['lineThickness']
+    
+    # Map fill properties
+    if 'fillOpacity' in rendering_config:
+        style_props['fill-opacity'] = rendering_config['fillOpacity']
+        # Set fill color same as stroke if fill is visible
+        if rendering_config['fillOpacity'] > 0 and 'lineColor' in rendering_config:
+            style_props['fill'] = rendering_config['lineColor']
+        elif rendering_config['fillOpacity'] == 0:
+            style_props['fill'] = '#000000'  # Default, but will be transparent
+    
+    # For points, map to marker properties
+    if 'lineColor' in rendering_config:
+        style_props['marker-color'] = rendering_config['lineColor']
+    
+    # Set marker size based on thickness or use default
+    thickness = rendering_config.get('lineThickness', 1.0)
+    if thickness <= 1.0:
+        style_props['marker-size'] = 'small'
+    elif thickness <= 2.0:
+        style_props['marker-size'] = 'medium'
+    else:
+        style_props['marker-size'] = 'large'
+    
+    # Default to visible
+    style_props['visible'] = True
+    
+    return style_props
 
 def generate_svg_preview(config_file: str, output_file: str, width: int = 800, height: int = 600):
     """
@@ -397,7 +558,7 @@ def generate_legend(config: Dict[str, Any], width: int, height: int) -> str:
     return svg
 
 def consolidate_overlays(output_dir: str):
-    """Consolidate multiple GeoJSON files into configuration files."""
+    """Consolidate multiple GeoJSON files into a single GeoJSON file with embedded styling."""
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
@@ -410,14 +571,10 @@ def consolidate_overlays(output_dir: str):
 
         print(f"\nProcessing overlay: {overlay_name}")
 
-        config = {
-            "version": "1.0",
-            "metadata": {
-                "name": f"{overlay_name} Overlays",
-                "description": f"Map overlays for {overlay_name} event",
-                "generated": datetime.now().isoformat()
-            },
-            "overlays": []
+        # Create a single GeoJSON FeatureCollection
+        consolidated_geojson = {
+            "type": "FeatureCollection",
+            "features": []
         }
 
         total_features = 0
@@ -436,50 +593,41 @@ def consolidate_overlays(output_dir: str):
             total_features += feature_count
             print(f"    Loaded {feature_count} features")
 
-            # Create overlay definition
-            overlay = {
-                "id": layer_id,
-                "name": layer_config["name"],
-                "description": layer_config["description"],
-                "rendering": layer_config["rendering"],
-                "geojson": geojson_data
-            }
+            # Add styling properties to each feature based on rendering config
+            styling_properties = convert_rendering_to_geojson_style(layer_config["rendering"])
+            
+            for feature in geojson_data.get('features', []):
+                # Ensure properties object exists
+                if 'properties' not in feature:
+                    feature['properties'] = {}
+                
+                # Add layer metadata
+                feature['properties']['layer_id'] = layer_id
+                feature['properties']['layer_name'] = layer_config["name"]
+                feature['properties']['description'] = layer_config["description"]
+                
+                # Add styling properties
+                feature['properties'].update(styling_properties)
+                
+                # Add to consolidated collection
+                consolidated_geojson['features'].append(feature)
 
-            config["overlays"].append(overlay)
+        print(f"  Consolidated {len(layers)} layers with {total_features} total features")
 
-        print(f"  Consolidated {len(config['overlays'])} layers with {total_features} total features")
+        # Write consolidated GeoJSON file
+        output_file = os.path.join(output_dir, f"{overlay_name}.geojson")
+        json_str = json.dumps(consolidated_geojson, separators=(',', ':'))
+        file_size = len(json_str.encode('utf-8'))
 
-        # Write uncompressed configuration for reference
-        uncompressed_file = os.path.join(output_dir, f"{overlay_name}GeoJSONMapConfig.json")
-        json_str = json.dumps(config, separators=(',', ':'))
-        original_size = len(json_str.encode('utf-8'))
-
-        with open(uncompressed_file, 'w', encoding='utf-8') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(json_str)
 
-        print(f"  Successfully created {uncompressed_file} ({original_size:,} bytes)")
-
-        # Write compressed configuration
-        output_file = os.path.join(output_dir, f"{overlay_name}GeoJSONMapConfig.json.zlib")
-
-        # Use raw deflate format (wbits=-15) for better iOS compatibility
-        compressed_data = zlib.compress(json_str.encode('utf-8'), level=6, wbits=-15)
-        with open(output_file, 'wb') as f:
-            f.write(compressed_data)
-
-        compressed_size = os.path.getsize(output_file)
-        compression_ratio = (1 - compressed_size / original_size) * 100
-        print(f"  Configuration compressed: {original_size:,} bytes -> {compressed_size:,} bytes ({compression_ratio:.1f}% reduction)")
-        print(f"  Successfully created {output_file}")
-
-        # Generate SVG preview
-        svg_output_file = os.path.join(output_dir, f"{overlay_name}GeoJSONMapConfig.svg")
-        generate_svg_preview(output_file, svg_output_file)
+        print(f"  Successfully created {output_file} ({file_size:,} bytes)")
 
         total_files_processed += 1
         total_features_processed += total_features
 
-    print(f"\nCompleted processing {total_files_processed} overlay configurations with {total_features_processed} total features")
+    print(f"\nCompleted processing {total_files_processed} GeoJSON files with {total_features_processed} total features")
 
 def load_and_preprocess_geojson(filepath: str, layer_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Load and preprocess a GeoJSON file."""
