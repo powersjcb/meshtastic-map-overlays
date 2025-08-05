@@ -134,6 +134,7 @@ import zlib
 import os
 import sys
 import math
+import shutil
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -141,7 +142,7 @@ from typing import Dict, Any, Optional, List, Tuple
 # TODO: Add validation that the config is valid for all required fields (rendering properties, file paths)
 OVERLAYS = [
     {
-        "name": "BurningMan",
+        "name": "BurningMan2025",
         "layers": {
             "streetOutlines": {
                 "inputFile": "resources/burning_man/2025/street_outlines.geojson",
@@ -184,8 +185,8 @@ OVERLAYS = [
                 "inputFile": "resources/burning_man/2025/toilets.geojson",
                 "name": "Toilets",
                 "description": "Portable toilet locations",
-                "simplificationStrategy": "rectangle",
-                "simplificationTolerance": 0.000005,
+                "simplificationStrategy": "douglas_peucker",
+                "simplificationTolerance": 0.000001,
                 "rendering": {
                     "lineColor": "#0000FF", # blue
                     "lineOpacity": 1.0,
@@ -640,8 +641,10 @@ def load_license_and_attribution():
 
 def consolidate_overlays(output_dir: str):
     """Consolidate multiple GeoJSON files into a single GeoJSON file with embedded styling."""
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    # Clear and create output directory
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
 
     # Load license and attribution information
     license_text, attribution_text = load_license_and_attribution()
