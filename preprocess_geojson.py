@@ -179,6 +179,19 @@ OVERLAYS = [
                     "lineThickness": 1.0,
                     "fillOpacity": 1.0
                 }
+            },
+            "toilets": {
+                "inputFile": "resources/burning_man/2025/toilets.geojson",
+                "name": "Toilets",
+                "description": "Portable toilet locations",
+                "simplificationStrategy": "rectangle",
+                "simplificationTolerance": 0.000005,
+                "rendering": {
+                    "lineColor": "#0000FF", # blue
+                    "lineOpacity": 1.0,
+                    "lineThickness": 1.0,
+                    "fillOpacity": 0.7
+                }
             }
         }
     }
