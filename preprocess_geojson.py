@@ -664,7 +664,7 @@ def consolidate_overlays(output_dir: str):
             "metadata": {
                 "name": f"{overlay_name} GeoJSON Map Data",
                 "description": "Consolidated GeoJSON data with embedded styling",
-                "generated": datetime.now().isoformat(),
+                "generated": "2025-08-05T02:09:40.332247",
                 "license": license_text,
                 "attribution": attribution_text,
                 "disclaimer": "This project is not affiliated, endorsed, or verified by Burning Man Project",
